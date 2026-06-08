@@ -6,6 +6,7 @@ import {
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureValidObjectId } from "../utils/mongoId.js";
+import { buildProductDetailResponse } from "../utils/productVariant.js";
 
 export const listProducts = asyncHandler(async (req, res) => {
   const category = String(req.query?.category ?? "")
@@ -58,5 +59,5 @@ export const getProductById = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Product was not found.");
   }
 
-  res.json(product);
+  res.json(await buildProductDetailResponse(product));
 });

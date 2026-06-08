@@ -1,8 +1,10 @@
 import Shop, { SHOP_STATUS, SHOP_STATUS_VALUES } from "../models/Shop.js";
 import Product from "../models/Product.js";
+import { destroyCloudinaryAsset, uploadImageFile } from "../utils/media.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureValidObjectId } from "../utils/mongoId.js";
+import { parseBooleanInput, parseObjectInput } from "../utils/request.js";
 import {
   buildShopSlug,
   buildUserShopSnapshot,
@@ -11,7 +13,9 @@ import {
 
 function normalizeShopAddress(address = {}) {
   return {
-    addressLine1: String(address?.addressLine1 ?? address?.address ?? "").trim(),
+    addressLine1: String(
+      address?.addressLine1 ?? address?.address ?? "",
+    ).trim(),
     city: String(address?.city ?? "").trim(),
     state: String(address?.state ?? "").trim(),
     zipCode: String(address?.zipCode ?? "").trim(),
@@ -68,10 +72,72 @@ function buildShopPayload(body = {}) {
   }
 
   if (Object.prototype.hasOwnProperty.call(body, "address")) {
-    payload.address = normalizeShopAddress(body.address);
+    payload.address = normalizeShopAddress(parseObjectInput(body.address));
   }
 
   return payload;
+}
+
+async function applyShopImages(req, shop, payload) {
+  const files = req.files ?? {};
+  const shouldRemoveLogo = parseBooleanInput(req.body?.removeLogo);
+  const shouldRemoveBanner = parseBooleanInput(req.body?.removeBanner);
+
+  if (files.logo?.[0]) {
+    const uploadedLogo = await uploadImageFile(files.logo[0], {
+      folder: "ls-ecommerce/shops/logos",
+    });
+
+    if (shop?.logoPublicId) {
+      await destroyCloudinaryAsset(shop.logoPublicId);
+    }
+
+    payload.logo = uploadedLogo?.url ?? "";
+    payload.logoPublicId = uploadedLogo?.publicId ?? "";
+  } else if (shouldRemoveLogo) {
+    if (shop?.logoPublicId) {
+      await destroyCloudinaryAsset(shop.logoPublicId);
+    }
+
+    payload.logo = "";
+    payload.logoPublicId = "";
+  } else if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "logo")) {
+    if (
+      shop?.logoPublicId &&
+      String(req.body?.logo ?? "").trim() !== String(shop.logo ?? "")
+    ) {
+      await destroyCloudinaryAsset(shop.logoPublicId);
+      payload.logoPublicId = "";
+    }
+  }
+
+  if (files.banner?.[0]) {
+    const uploadedBanner = await uploadImageFile(files.banner[0], {
+      folder: "ls-ecommerce/shops/banners",
+    });
+
+    if (shop?.bannerPublicId) {
+      await destroyCloudinaryAsset(shop.bannerPublicId);
+    }
+
+    payload.banner = uploadedBanner?.url ?? "";
+    payload.bannerPublicId = uploadedBanner?.publicId ?? "";
+  } else if (shouldRemoveBanner) {
+    if (shop?.bannerPublicId) {
+      await destroyCloudinaryAsset(shop.bannerPublicId);
+    }
+
+    payload.banner = "";
+    payload.bannerPublicId = "";
+  } else if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "banner")) {
+    if (
+      shop?.bannerPublicId &&
+      String(req.body?.banner ?? "").trim() !== String(shop.banner ?? "")
+    ) {
+      await destroyCloudinaryAsset(shop.bannerPublicId);
+      payload.bannerPublicId = "";
+    }
+  }
 }
 
 async function syncUserShopSnapshot(user, shop) {
@@ -104,7 +170,10 @@ async function findMyShop(user) {
   if (snapshotShopId) {
     const shopBySnapshotId = await Shop.findById(snapshotShopId);
 
-    if (shopBySnapshotId && String(shopBySnapshotId.ownerId) === String(user.id)) {
+    if (
+      shopBySnapshotId &&
+      String(shopBySnapshotId.ownerId) === String(user.id)
+    ) {
       return shopBySnapshotId;
     }
   }
@@ -156,6 +225,8 @@ export const upsertMyShop = asyncHandler(async (req, res) => {
   const payload = buildShopPayload(req.body);
   const existingShop = await findMyShop(req.user);
 
+  await applyShopImages(req, existingShop, payload);
+
   if (!existingShop && !payload.name) {
     throw new ApiError(400, "Shop name is required to create a shop.");
   }
@@ -173,8 +244,14 @@ export const upsertMyShop = asyncHandler(async (req, res) => {
       ownerId: String(req.user.id),
       description: payload.description ?? "",
       logo: payload.logo ?? "",
+      logoPublicId: payload.logoPublicId ?? "",
       banner: payload.banner ?? "",
-      contactEmail: payload.contactEmail ?? String(req.user.email ?? "").trim().toLowerCase(),
+      bannerPublicId: payload.bannerPublicId ?? "",
+      contactEmail:
+        payload.contactEmail ??
+        String(req.user.email ?? "")
+          .trim()
+          .toLowerCase(),
       phone: payload.phone ?? String(req.user.phone ?? "").trim(),
       address: payload.address ?? normalizeShopAddress(),
       status: payload.status ?? SHOP_STATUS.ACTIVE,
@@ -187,7 +264,9 @@ export const upsertMyShop = asyncHandler(async (req, res) => {
     }
 
     if (!shop.contactEmail) {
-      shop.contactEmail = String(req.user.email ?? "").trim().toLowerCase();
+      shop.contactEmail = String(req.user.email ?? "")
+        .trim()
+        .toLowerCase();
     }
 
     await shop.save();

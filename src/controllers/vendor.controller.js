@@ -1,12 +1,30 @@
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Shop from "../models/Shop.js";
+import Variant from "../models/Variant.js";
 import { ORDER_STATUS } from "../constants/orderStatus.js";
 import { PRODUCT_STATUS } from "../constants/productStatus.js";
+import {
+  destroyCloudinaryAssets,
+  uploadImageFile,
+  uploadManyImageFiles,
+} from "../utils/media.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureValidObjectId } from "../utils/mongoId.js";
 import { attachVendorItemsToOrder } from "../utils/orderMapper.js";
+import {
+  parseBooleanInput,
+  parseObjectArrayInput,
+  parseObjectInput,
+  parseStringArrayInput,
+} from "../utils/request.js";
+import { ensureCategoryBySlug } from "../utils/category.js";
+import {
+  attachVariantsToProductList,
+  buildProductDetailResponse,
+  syncProductVariants,
+} from "../utils/productVariant.js";
 import {
   buildShopSlug,
   buildUserShopSnapshot,
@@ -20,43 +38,122 @@ const VENDOR_ALLOWED_PRODUCT_STATUSES = [
   PRODUCT_STATUS.INACTIVE,
 ];
 
+const VENDOR_ALLOWED_PRODUCT_FORM_STATUSES = [
+  PRODUCT_STATUS.DRAFT,
+  PRODUCT_STATUS.PENDING,
+];
+
 const VENDOR_ALLOWED_ORDER_STATUSES = [
   ORDER_STATUS.PROCESSING,
   ORDER_STATUS.COMPLETED,
   ORDER_STATUS.CANCELLED,
 ];
 
+function hasOwnField(target, key) {
+  return Object.prototype.hasOwnProperty.call(target ?? {}, key);
+}
+
+function resolveVendorFormStatus(status, fallback = PRODUCT_STATUS.DRAFT) {
+  const normalizedStatus = String(status ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedStatus) {
+    return fallback;
+  }
+
+  if (!VENDOR_ALLOWED_PRODUCT_FORM_STATUSES.includes(normalizedStatus)) {
+    throw new ApiError(400, "Vendor product form status is invalid.");
+  }
+
+  return normalizedStatus;
+}
+
+function resolvePayloadValue(payload, key, currentValue = "") {
+  if (hasOwnField(payload, key)) {
+    return payload[key];
+  }
+
+  return currentValue;
+}
+
+function validatePendingProductPayload(payload = {}, currentProduct = null) {
+  const title = String(
+    resolvePayloadValue(payload, "title", currentProduct?.title ?? ""),
+  ).trim();
+  const category = String(
+    resolvePayloadValue(payload, "category", currentProduct?.category ?? ""),
+  )
+    .trim()
+    .toLowerCase();
+  const description = String(
+    resolvePayloadValue(
+      payload,
+      "description",
+      currentProduct?.description ?? "",
+    ),
+  ).trim();
+  const price = Number(
+    resolvePayloadValue(payload, "price", currentProduct?.price ?? 0),
+  );
+  const thumbnail = String(
+    resolvePayloadValue(payload, "thumbnail", currentProduct?.thumbnail ?? ""),
+  ).trim();
+
+  if (!title || !category || !description) {
+    throw new ApiError(
+      400,
+      "title, category, and description are required before submitting product.",
+    );
+  }
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new ApiError(
+      400,
+      "Product price must be greater than 0 before submit.",
+    );
+  }
+
+  if (!thumbnail) {
+    throw new ApiError(400, "Product thumbnail is required before submit.");
+  }
+}
+
 function buildProductPayload(body = {}) {
   const payload = {};
 
-  if (Object.prototype.hasOwnProperty.call(body, "title")) {
+  if (hasOwnField(body, "title")) {
     const title = String(body.title ?? "").trim();
 
-    if (!title) {
-      throw new ApiError(400, "Product title is required.");
-    }
-
     payload.title = title;
-    payload.slug = slugify(title);
+    payload.slug = title ? slugify(title) : "";
   }
 
-  if (Object.prototype.hasOwnProperty.call(body, "category")) {
+  if (hasOwnField(body, "category")) {
     const category = String(body.category ?? "")
       .trim()
       .toLowerCase();
 
-    if (!category) {
-      throw new ApiError(400, "Product category is required.");
-    }
-
     payload.category = category;
   }
 
-  if (Object.prototype.hasOwnProperty.call(body, "description")) {
+  if (hasOwnField(body, "description")) {
     payload.description = String(body.description ?? "").trim();
   }
 
-  if (Object.prototype.hasOwnProperty.call(body, "price")) {
+  if (hasOwnField(body, "attributes")) {
+    payload.attributes = parseObjectInput(body.attributes);
+  }
+
+  if (hasOwnField(body, "colors")) {
+    payload.colors = parseStringArrayInput(body.colors);
+  }
+
+  if (hasOwnField(body, "sizes")) {
+    payload.sizes = parseStringArrayInput(body.sizes);
+  }
+
+  if (hasOwnField(body, "price")) {
     const price = Number(body.price ?? 0);
 
     if (Number.isNaN(price) || price < 0) {
@@ -66,7 +163,7 @@ function buildProductPayload(body = {}) {
     payload.price = price;
   }
 
-  if (Object.prototype.hasOwnProperty.call(body, "oldPrice")) {
+  if (hasOwnField(body, "oldPrice")) {
     const oldPrice = Number(body.oldPrice ?? 0);
 
     if (Number.isNaN(oldPrice) || oldPrice < 0) {
@@ -76,7 +173,7 @@ function buildProductPayload(body = {}) {
     payload.oldPrice = oldPrice;
   }
 
-  if (Object.prototype.hasOwnProperty.call(body, "stock")) {
+  if (hasOwnField(body, "stock")) {
     const stock = Number(body.stock ?? 0);
 
     if (Number.isNaN(stock) || stock < 0) {
@@ -86,17 +183,98 @@ function buildProductPayload(body = {}) {
     payload.stock = stock;
   }
 
-  if (Object.prototype.hasOwnProperty.call(body, "thumbnail")) {
+  if (hasOwnField(body, "thumbnail")) {
     payload.thumbnail = String(body.thumbnail ?? "").trim();
   }
 
-  if (Object.prototype.hasOwnProperty.call(body, "gallery")) {
-    payload.gallery = Array.isArray(body.gallery)
-      ? body.gallery.map((item) => String(item ?? "").trim()).filter(Boolean)
-      : [];
+  if (hasOwnField(body, "gallery")) {
+    payload.gallery = parseStringArrayInput(body.gallery);
+  }
+
+  if (hasOwnField(body, "status")) {
+    payload.status = resolveVendorFormStatus(body.status, PRODUCT_STATUS.DRAFT);
   }
 
   return payload;
+}
+
+async function applyProductImages(req, product, payload) {
+  const files = req.files ?? {};
+  const shouldRemoveThumbnail = parseBooleanInput(req.body?.removeThumbnail);
+  const shouldReplaceGallery = parseBooleanInput(req.body?.replaceGallery);
+
+  if (files.thumbnail?.[0]) {
+    const uploadedThumbnail = await uploadImageFile(files.thumbnail[0], {
+      folder: "ls-ecommerce/products/thumbnails",
+    });
+
+    if (product?.thumbnailPublicId) {
+      await destroyCloudinaryAssets([product.thumbnailPublicId]);
+    }
+
+    payload.thumbnail = uploadedThumbnail?.url ?? "";
+    payload.thumbnailPublicId = uploadedThumbnail?.publicId ?? "";
+  } else if (shouldRemoveThumbnail) {
+    if (product?.thumbnailPublicId) {
+      await destroyCloudinaryAssets([product.thumbnailPublicId]);
+    }
+
+    payload.thumbnail = "";
+    payload.thumbnailPublicId = "";
+  } else if (
+    Object.prototype.hasOwnProperty.call(req.body ?? {}, "thumbnail")
+  ) {
+    if (
+      product?.thumbnailPublicId &&
+      String(req.body?.thumbnail ?? "").trim() !==
+        String(product.thumbnail ?? "")
+    ) {
+      await destroyCloudinaryAssets([product.thumbnailPublicId]);
+      payload.thumbnailPublicId = "";
+    }
+  }
+
+  if (files.gallery?.length) {
+    const uploadedGallery = await uploadManyImageFiles(files.gallery, {
+      folder: "ls-ecommerce/products/gallery",
+    });
+
+    if (
+      Array.isArray(product?.galleryPublicIds) &&
+      product.galleryPublicIds.length > 0
+    ) {
+      await destroyCloudinaryAssets(product.galleryPublicIds);
+    }
+
+    payload.gallery = uploadedGallery.map((item) => item.url);
+    payload.galleryPublicIds = uploadedGallery.map((item) => item.publicId);
+  } else if (shouldReplaceGallery) {
+    if (
+      Array.isArray(product?.galleryPublicIds) &&
+      product.galleryPublicIds.length > 0
+    ) {
+      await destroyCloudinaryAssets(product.galleryPublicIds);
+    }
+
+    payload.gallery = [];
+    payload.galleryPublicIds = [];
+  } else if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "gallery")) {
+    const nextGallery = parseStringArrayInput(req.body?.gallery);
+    const currentGallery = Array.isArray(product?.gallery)
+      ? product.gallery
+      : [];
+
+    if (
+      Array.isArray(product?.galleryPublicIds) &&
+      product.galleryPublicIds.length > 0 &&
+      JSON.stringify(nextGallery) !== JSON.stringify(currentGallery)
+    ) {
+      await destroyCloudinaryAssets(product.galleryPublicIds);
+      payload.galleryPublicIds = [];
+    }
+
+    payload.gallery = nextGallery;
+  }
 }
 
 async function findOwnedProduct(productId, vendorId) {
@@ -175,34 +353,69 @@ export const listMyProducts = asyncHandler(async (req, res) => {
   const products = await Product.find({ vendorId: req.user.id }).sort({
     createdAt: -1,
   });
-  res.json(products);
+  res.json(await attachVariantsToProductList(products));
 });
 
 export const createProduct = asyncHandler(async (req, res) => {
   const payload = buildProductPayload(req.body);
   const shop = await ensureVendorShop(req.user);
+  const variantsInput = parseObjectArrayInput(req.body?.variants);
 
-  if (
-    !payload.title ||
-    !payload.category ||
-    typeof payload.price !== "number"
-  ) {
-    throw new ApiError(400, "title, category, and price are required.");
+  await applyProductImages(req, null, payload);
+
+  payload.status = resolveVendorFormStatus(
+    payload.status,
+    PRODUCT_STATUS.DRAFT,
+  );
+  payload.category =
+    String(payload.category ?? "")
+      .trim()
+      .toLowerCase() || "others";
+  payload.price = typeof payload.price === "number" ? payload.price : 0;
+  payload.oldPrice =
+    typeof payload.oldPrice === "number" ? payload.oldPrice : 0;
+  payload.stock = typeof payload.stock === "number" ? payload.stock : 0;
+
+  if (payload.status === PRODUCT_STATUS.PENDING) {
+    validatePendingProductPayload(payload);
   }
+
+  const category = await ensureCategoryBySlug(payload.category);
 
   const product = await Product.create({
     ...payload,
     oldPrice: payload.oldPrice ?? 0,
     stock: payload.stock ?? 0,
+    attributes: payload.attributes ?? {},
+    colors: payload.colors ?? [],
+    sizes: payload.sizes ?? [],
     thumbnail: payload.thumbnail ?? "",
+    thumbnailPublicId: payload.thumbnailPublicId ?? "",
     gallery: payload.gallery ?? (payload.thumbnail ? [payload.thumbnail] : []),
-    status: PRODUCT_STATUS.DRAFT,
+    galleryPublicIds:
+      payload.galleryPublicIds ??
+      (payload.thumbnailPublicId ? [payload.thumbnailPublicId] : []),
+    categoryId: category?._id ?? null,
+    categoryName: category?.name ?? "",
+    status: payload.status ?? PRODUCT_STATUS.DRAFT,
     vendorId: req.user.id,
     shopId: shop.id,
     shopName: shop.name,
   });
 
-  res.status(201).json(product);
+  await syncProductVariants(product, variantsInput, {
+    category,
+    fallbackPrice: payload.price,
+    fallbackOldPrice: payload.oldPrice ?? 0,
+    fallbackStock: payload.stock ?? 0,
+    fallbackImage: payload.thumbnail ?? "",
+    fallbackColors: payload.colors ?? [],
+    fallbackSizes: payload.sizes ?? [],
+  });
+
+  await product.save();
+
+  res.status(201).json(await buildProductDetailResponse(product));
 });
 
 export const updateProduct = asyncHandler(async (req, res) => {
@@ -210,23 +423,65 @@ export const updateProduct = asyncHandler(async (req, res) => {
   const product = await findOwnedProduct(productId, req.user.id);
   const payload = buildProductPayload(req.body);
   const shop = await ensureVendorShop(req.user);
+  const hasVariantsInput = Object.prototype.hasOwnProperty.call(
+    req.body ?? {},
+    "variants",
+  );
+  const variantsInput = parseObjectArrayInput(req.body?.variants);
 
-  delete payload.status;
+  await applyProductImages(req, product, payload);
+
   delete payload.vendorId;
   delete payload.shopId;
   delete payload.shopName;
 
+  payload.status = resolveVendorFormStatus(payload.status, product.status);
+
+  const resolvedCategorySlug = payload.category ?? product.category ?? "others";
+  const category = await ensureCategoryBySlug(resolvedCategorySlug);
+  payload.category = resolvedCategorySlug;
+  payload.categoryId = category?._id ?? null;
+  payload.categoryName = category?.name ?? "";
+
+  if (payload.status === PRODUCT_STATUS.PENDING) {
+    validatePendingProductPayload(payload, product);
+  }
+
   Object.assign(product, payload);
 
-  if (payload.thumbnail && !payload.gallery) {
+  if (
+    payload.thumbnail &&
+    !Object.prototype.hasOwnProperty.call(payload, "gallery") &&
+    (!Array.isArray(product.gallery) || product.gallery.length === 0)
+  ) {
     product.gallery = [payload.thumbnail];
+
+    if (payload.thumbnailPublicId) {
+      product.galleryPublicIds = [payload.thumbnailPublicId];
+    }
   }
 
   product.shopId = shop.id;
   product.shopName = shop.name;
 
+  if (
+    hasVariantsInput ||
+    !product.defaultVariantId ||
+    product.variantCount === 0
+  ) {
+    await syncProductVariants(product, variantsInput, {
+      category,
+      fallbackPrice: payload.price ?? product.price,
+      fallbackOldPrice: payload.oldPrice ?? product.oldPrice,
+      fallbackStock: payload.stock ?? product.stock,
+      fallbackImage: payload.thumbnail ?? product.thumbnail,
+      fallbackColors: payload.colors ?? product.colors ?? [],
+      fallbackSizes: payload.sizes ?? product.sizes ?? [],
+    });
+  }
+
   await product.save();
-  res.json(product);
+  res.json(await buildProductDetailResponse(product));
 });
 
 export const updateProductStatus = asyncHandler(async (req, res) => {
@@ -249,6 +504,15 @@ export const updateProductStatus = asyncHandler(async (req, res) => {
 export const deleteProduct = asyncHandler(async (req, res) => {
   const productId = ensureValidObjectId(req.params?.id, "Product id");
   const product = await findOwnedProduct(productId, req.user.id);
+
+  await destroyCloudinaryAssets([
+    product.thumbnailPublicId,
+    ...(Array.isArray(product.galleryPublicIds)
+      ? product.galleryPublicIds
+      : []),
+  ]);
+
+  await Variant.deleteMany({ productId: product._id });
 
   await product.deleteOne();
 

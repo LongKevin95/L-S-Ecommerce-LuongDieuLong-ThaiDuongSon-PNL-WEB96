@@ -27,6 +27,11 @@ export function errorHandler(error, _req, res, _next) {
       Object.values(error.errors || {})[0]?.message || "Validation failed.";
   }
 
+  if (error?.name === "MulterError") {
+    statusCode = 400;
+    message = error?.message || "Uploaded file is invalid.";
+  }
+
   if (error?.code === 11000) {
     statusCode = 409;
     message = "A unique field already exists.";

@@ -10,15 +10,21 @@ import {
   updateProductStatus,
 } from "../controllers/vendor.controller.js";
 import { authorize, protect } from "../middlewares/authMiddleware.js";
+import { uploadImageFields } from "../middlewares/uploadMiddleware.js";
 import { USER_ROLES } from "../constants/roles.js";
 
 const router = Router();
 
+const uploadProductImages = uploadImageFields([
+  { name: "thumbnail", maxCount: 1 },
+  { name: "gallery", maxCount: 5 },
+]);
+
 router.use(protect, authorize([USER_ROLES.VENDOR]));
 
 router.get("/products/me", listMyProducts);
-router.post("/products", createProduct);
-router.patch("/products/:id", updateProduct);
+router.post("/products", uploadProductImages, createProduct);
+router.patch("/products/:id", uploadProductImages, updateProduct);
 router.patch("/products/:id/status", updateProductStatus);
 router.delete("/products/:id", deleteProduct);
 router.get("/orders", listOrders);

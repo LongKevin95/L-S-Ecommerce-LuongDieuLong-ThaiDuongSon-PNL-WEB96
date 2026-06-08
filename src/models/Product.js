@@ -1,20 +1,23 @@
 import mongoose from "mongoose";
 
-import { PRODUCT_STATUS, PRODUCT_STATUS_VALUES } from "../constants/productStatus.js";
+import {
+  PRODUCT_STATUS,
+  PRODUCT_STATUS_VALUES,
+} from "../constants/productStatus.js";
 import { applySchemaTransform } from "../utils/schemaTransform.js";
 
 const productSchema = new mongoose.Schema(
   {
     title: {
       type: String,
-      required: true,
       trim: true,
+      default: "",
     },
     slug: {
       type: String,
-      required: true,
       trim: true,
       lowercase: true,
+      default: "",
     },
     category: {
       type: String,
@@ -22,10 +25,32 @@ const productSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
+    },
+    categoryName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     description: {
       type: String,
       trim: true,
       default: "",
+    },
+    attributes: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    colors: {
+      type: [String],
+      default: [],
+    },
+    sizes: {
+      type: [String],
+      default: [],
     },
     price: {
       type: Number,
@@ -47,7 +72,16 @@ const productSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    thumbnailPublicId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     gallery: {
+      type: [String],
+      default: [],
+    },
+    galleryPublicIds: {
       type: [String],
       default: [],
     },
@@ -55,6 +89,11 @@ const productSchema = new mongoose.Schema(
       type: String,
       enum: PRODUCT_STATUS_VALUES,
       default: PRODUCT_STATUS.DRAFT,
+    },
+    reason: {
+      type: String,
+      trim: true,
+      default: "",
     },
     vendorId: {
       type: String,
@@ -71,14 +110,28 @@ const productSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    defaultVariantId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    variantCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,
   },
 );
 
+productSchema.index({ status: 1, category: 1, createdAt: -1 });
+productSchema.index({ vendorId: 1, createdAt: -1 });
+
 applySchemaTransform(productSchema);
 
-const Product = mongoose.models.Product || mongoose.model("Product", productSchema);
+const Product =
+  mongoose.models.Product || mongoose.model("Product", productSchema);
 
 export default Product;

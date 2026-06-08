@@ -53,9 +53,14 @@ export const updateProductStatus = asyncHandler(async (req, res) => {
   const nextStatus = String(req.body?.status ?? "")
     .trim()
     .toLowerCase();
+  const reason = String(req.body?.reason ?? "").trim();
 
   if (!ADMIN_ALLOWED_PRODUCT_STATUSES.includes(nextStatus)) {
     throw new ApiError(400, "Admin product status is invalid.");
+  }
+
+  if (nextStatus === PRODUCT_STATUS.REJECTED && !reason) {
+    throw new ApiError(400, "Reject reason is required.");
   }
 
   const product = await Product.findById(productId);
@@ -65,6 +70,7 @@ export const updateProductStatus = asyncHandler(async (req, res) => {
   }
 
   product.status = nextStatus;
+  product.reason = nextStatus === PRODUCT_STATUS.REJECTED ? reason : "";
   await product.save();
 
   res.json(product);

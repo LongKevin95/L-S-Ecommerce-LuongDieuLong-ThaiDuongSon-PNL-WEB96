@@ -1,14 +1,17 @@
 import User from "../models/User.js";
 import { USER_ROLE_VALUES } from "../constants/roles.js";
 import { USER_STATUS_VALUES } from "../constants/userStatus.js";
+import { destroyCloudinaryAsset, uploadImageFile } from "../utils/media.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sanitizeUser } from "../utils/auth.js";
 import { ensureValidObjectId } from "../utils/mongoId.js";
+import { parseBooleanInput } from "../utils/request.js";
 
 export const updateProfile = asyncHandler(async (req, res) => {
   const user = req.user;
   const updates = {};
+  const shouldRemoveAvatar = parseBooleanInput(req.body?.removeAvatar);
 
   if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "name")) {
     const name = String(req.body?.name ?? "").trim();
@@ -34,6 +37,36 @@ export const updateProfile = asyncHandler(async (req, res) => {
 
   if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "bio")) {
     updates.bio = String(req.body?.bio ?? "").trim();
+  }
+
+  if (req.file) {
+    const uploadedAvatar = await uploadImageFile(req.file, {
+      folder: "ls-ecommerce/users/avatars",
+    });
+
+    if (user.avatarPublicId) {
+      await destroyCloudinaryAsset(user.avatarPublicId);
+    }
+
+    updates.avatarUrl = uploadedAvatar?.url ?? "";
+    updates.avatarPublicId = uploadedAvatar?.publicId ?? "";
+  } else if (shouldRemoveAvatar) {
+    if (user.avatarPublicId) {
+      await destroyCloudinaryAsset(user.avatarPublicId);
+    }
+
+    updates.avatarUrl = "";
+    updates.avatarPublicId = "";
+  } else if (
+    Object.prototype.hasOwnProperty.call(req.body ?? {}, "avatarUrl")
+  ) {
+    if (
+      user.avatarPublicId &&
+      String(req.body?.avatarUrl ?? "").trim() !== user.avatarUrl
+    ) {
+      await destroyCloudinaryAsset(user.avatarPublicId);
+      updates.avatarPublicId = "";
+    }
   }
 
   Object.assign(user, updates);

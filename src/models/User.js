@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-
 import { USER_ROLE_VALUES } from "../constants/roles.js";
 import { USER_STATUS, USER_STATUS_VALUES } from "../constants/userStatus.js";
 import { applySchemaTransform } from "../utils/schemaTransform.js";
@@ -44,6 +43,11 @@ const userSchema = new mongoose.Schema(
       default: USER_STATUS.ACTIVE,
     },
     avatarUrl: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    avatarPublicId: {
       type: String,
       trim: true,
       default: "",

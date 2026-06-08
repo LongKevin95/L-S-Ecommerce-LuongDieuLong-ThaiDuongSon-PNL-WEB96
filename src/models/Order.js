@@ -23,7 +23,15 @@ const shippingAddressSchema = new mongoose.Schema(
 const orderItemSchema = new mongoose.Schema(
   {
     productId: { type: String, trim: true, required: true },
+    variantId: { type: String, trim: true, default: "" },
+    variantLabel: { type: String, trim: true, default: "" },
+    title: { type: String, trim: true, default: "Product" },
+    image: { type: String, trim: true, default: "/favicon.svg" },
     quantity: { type: Number, required: true, min: 1 },
+    price: { type: Number, default: 0, min: 0 },
+    vendorEmail: { type: String, trim: true, default: "" },
+    shopName: { type: String, trim: true, default: "Shop" },
+    sku: { type: String, trim: true, default: "" },
     color: { type: String, trim: true, default: "Default" },
     size: { type: String, trim: true, default: "Default" },
   },

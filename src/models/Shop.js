@@ -70,7 +70,17 @@ const shopSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    logoPublicId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     banner: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    bannerPublicId: {
       type: String,
       trim: true,
       default: "",

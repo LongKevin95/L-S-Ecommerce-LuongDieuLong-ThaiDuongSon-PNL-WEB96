@@ -3,11 +3,20 @@ import Product from "../models/Product.js";
 import Variant from "../models/Variant.js";
 import {
   ORDER_STATUS,
+  PAYMENT_METHODS,
+  PAYMENT_PROVIDERS,
   PAYMENT_METHOD_VALUES,
+  PAYMENT_STATUS,
 } from "../constants/orderStatus.js";
 import { PRODUCT_STATUS } from "../constants/productStatus.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { ensureValidObjectId } from "../utils/mongoId.js";
+import {
+  appendStatusHistory,
+  buildCancellationPayload,
+  createInitialStatusHistory,
+} from "../utils/orderWorkflow.js";
 
 function normalizeShippingAddress(shippingAddress = {}) {
   return {
@@ -102,13 +111,26 @@ function buildOrderPayload({
   items,
   total,
 }) {
+  const createdAt = new Date();
+
   return {
     customerId,
     status: ORDER_STATUS.PENDING,
     paymentMethod,
+    paymentStatus: PAYMENT_STATUS.PENDING,
+    paymentProvider:
+      paymentMethod === PAYMENT_METHODS.CARD
+        ? PAYMENT_PROVIDERS.MOCK_GATEWAY
+        : PAYMENT_PROVIDERS.COD,
     shippingAddress,
     items,
     total,
+    cancellation: null,
+    statusHistory: createInitialStatusHistory(
+      ORDER_STATUS.PENDING,
+      "customer",
+      createdAt,
+    ),
   };
 }
 
@@ -341,6 +363,51 @@ async function createOrderWithFallback(payload) {
   }
 }
 
+async function restoreStocksForCancelledOrder(order) {
+  const orderItems = Array.isArray(order?.items) ? order.items : [];
+
+  if (orderItems.length === 0) {
+    return;
+  }
+
+  const productIds = [...new Set(
+    orderItems.map((item) => String(item?.productId ?? "").trim()).filter(Boolean),
+  )];
+  const variantIds = [...new Set(
+    orderItems.map((item) => String(item?.variantId ?? "").trim()).filter(Boolean),
+  )];
+
+  const products = await Product.find({ _id: { $in: productIds } });
+  const variants = await Variant.find({ _id: { $in: variantIds } });
+  const productMap = new Map(products.map((product) => [String(product.id), product]));
+  const variantMap = new Map(variants.map((variant) => [String(variant.id), variant]));
+
+  orderItems.forEach((item) => {
+    const quantity = Math.max(0, Number(item?.quantity ?? 0));
+
+    if (quantity <= 0) {
+      return;
+    }
+
+    const product = productMap.get(String(item?.productId ?? "").trim());
+    const variant = variantMap.get(String(item?.variantId ?? "").trim());
+
+    if (product) {
+      product.stock = Number(product.stock ?? 0) + quantity;
+    }
+
+    if (variant) {
+      variant.stock = Number(variant.stock ?? 0) + quantity;
+    }
+  });
+
+  await Promise.all(
+    products
+      .map((product) => product.save())
+      .concat(variants.map((variant) => variant.save())),
+  );
+}
+
 export const createOrder = asyncHandler(async (req, res) => {
   const customerId = String(req.body?.customerId ?? req.user?.id ?? "").trim();
   const paymentMethod = String(req.body?.paymentMethod ?? "cod")
@@ -433,4 +500,39 @@ export const getMyOrders = asyncHandler(async (req, res) => {
     createdAt: -1,
   });
   res.json(orders);
+});
+
+export const cancelMyOrder = asyncHandler(async (req, res) => {
+  const orderId = ensureValidObjectId(req.params?.id, "Order id");
+  const reason = String(req.body?.reason ?? "").trim();
+
+  if (!reason) {
+    throw new ApiError(400, "Cancellation reason is required.");
+  }
+
+  const order = await Order.findOne({
+    _id: orderId,
+    customerId: String(req.user.id),
+  });
+
+  if (!order) {
+    throw new ApiError(404, "Order was not found.");
+  }
+
+  if (String(order.status ?? "").toLowerCase() !== ORDER_STATUS.PENDING) {
+    throw new ApiError(400, "Only pending orders can be cancelled.");
+  }
+
+  await restoreStocksForCancelledOrder(order);
+
+  order.statusHistory = appendStatusHistory(
+    order,
+    ORDER_STATUS.CANCELLED,
+    "customer",
+  );
+  order.status = ORDER_STATUS.CANCELLED;
+  order.cancellation = buildCancellationPayload(reason, "customer");
+  await order.save();
+
+  res.json(order);
 });

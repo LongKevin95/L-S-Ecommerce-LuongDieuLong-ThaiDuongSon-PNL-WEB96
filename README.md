@@ -1,97 +1,143 @@
-# L&S Ecommerce Backend Skeleton
+# L&S Ecommerce Backend
 
-Backend skeleton cho Express + MongoDB + MVC, được dựng để bám theo contract đã chốt ở frontend và phù hợp để deploy trên Render.
+Express + MongoDB backend for the L&S Ecommerce project.
 
-## Stack
+This backend powers authentication, products, shops, orders, wishlist,
+vendor/admin management, and post-purchase product reviews.
+
+## Tech Stack
 
 - Node.js
 - Express
 - MongoDB + Mongoose
 - JWT
 - bcryptjs
+- Multer
+- Cloudinary
 
-## Scripts
+## Main Features
+
+- Auth: signup, login, profile update
+- Public products and product detail
+- Shops and vendor storefront data
+- Customer orders and cancellation flow
+- Vendor product CRUD and order handling
+- Admin product moderation and account management
+- Wishlist endpoints
+- Product reviews after completed purchase
+- Vendor replies to customer reviews
+
+## API Modules
+
+- `/health`
+- `/auth`
+- `/users`
+- `/products`
+- `/shops`
+- `/orders`
+- `/wishlist`
+- `/payments`
+- `/vendor`
+- `/admin`
+
+## Local Development
 
 ```bash
 npm install
 npm run dev
+```
+
+Production-style start:
+
+```bash
 npm start
 ```
 
-## Seed demo data
+## Environment
+
+Copy `.env.example` to `.env` and fill in your values:
+
+```env
+NODE_ENV=development
+PORT=5000
+MONGODB_URI=mongodb+srv://your_db_user:your_db_password@cluster0.xxxxx.mongodb.net/final-project-ls-ecommerce?appName=Cluster0
+JWT_SECRET=change-this-secret
+CLIENT_URL=http://localhost:5173,https://your-frontend.onrender.com
+```
+
+Notes:
+
+- `CLIENT_URL` supports a comma-separated list of allowed origins.
+- In development, localhost origins on different ports are also allowed for
+  easier FE/BE testing.
+
+## MongoDB Notes
+
+- MongoDB Atlas works with the connection string in `MONGODB_URI`.
+- Local MongoDB also works, for example:
+
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/final-project-ls-ecommerce
+```
+
+- The startup flow now fails fast and logs clearer diagnostics when MongoDB
+  DNS resolution or server selection fails.
+- Common failure hints are printed for:
+  - Atlas DNS resolution issues
+  - wrong username/password
+  - IP allowlist / network access problems
+  - server timeout / connection refusal
+
+## Seed Demo Data
 
 ```bash
 npm run seed
 ```
 
-Seed script sẽ tạo hoặc cập nhật các tài khoản demo sau:
+The seed script creates or updates these demo accounts:
 
 - `customer@ls.com / 123456`
 - `vendor@ls.com / 123456`
 - `admin@ls.com / 123456`
 
-## Postman collection
+## Render Deployment
 
-Collection file nằm tại:
-
-- `docs/postman/ls-ecommerce-backend.postman_collection.json`
-
-Thứ tự test nhanh được đề xuất:
-
-1. `GET /health`
-2. Chạy 3 request login để Postman tự lưu `customerToken`, `vendorToken`, `adminToken`
-3. `GET /products` để Postman tự lưu `productId`
-4. `POST /orders` để tạo order demo và lưu `orderId`
-5. Test các luồng vendor/admin còn lại
-
-## Environment variables
-
-Copy `.env.example` thành `.env` và cập nhật:
-
-```env
-NODE_ENV=development
-PORT=5000
-MONGODB_URI=mongodb://127.0.0.1:27017/ls-ecommerce
-JWT_SECRET=change-this-secret
-CLIENT_URL=http://localhost:5173,https://your-frontend.onrender.com
-```
-
-Nếu dùng MongoDB Atlas, `MONGODB_URI` có thể ở dạng:
-
-```env
-MONGODB_URI=mongodb+srv://your_db_user:your_db_password@cluster0.xxxxx.mongodb.net/final-project-ls-ecommerce?retryWrites=true&w=majority&appName=Cluster0
-```
-
-Bạn không cần tạo collection thủ công trước. Sau khi `MONGODB_URI` đúng và chạy `npm run seed`, Mongoose sẽ tự tạo các collection chính như `users`, `products`, và `orders`.
-
-## Cấu trúc chính
-
-- `src/app.js`: app Express và middleware chung
-- `src/server.js`: bootstrap server
-- `src/config/*`: env và database
-- `src/routes/*`: route definitions
-- `src/controllers/*`: controller layer
-- `src/models/*`: mongoose models
-- `src/middlewares/*`: auth, error, not found
-- `src/utils/*`: helper dùng chung
-
-## Render deployment notes
-
-### Backend service
+Recommended Render service settings:
 
 - Type: Web Service
-- Root Directory: folder backend này
+- Root Directory: this backend folder
 - Build Command: `npm install`
 - Start Command: `npm start`
 
-### Required env vars on Render
+Required env vars on Render:
 
 - `NODE_ENV=production`
 - `PORT=10000`
-- `MONGODB_URI=<your-mongodb-atlas-uri>`
+- `MONGODB_URI=<your-atlas-uri>`
 - `JWT_SECRET=<strong-secret>`
-- `CLIENT_URL=<your-frontend-render-url>`
+- `CLIENT_URL=<your-frontend-url>`
 
-## Trạng thái hiện tại
+## Project Structure
 
-Business logic chính theo contract đã được implement cho auth, users, products, orders, vendor, và admin flows. Bạn chỉ cần cài package, cấu hình MongoDB, seed dữ liệu demo nếu muốn, rồi chạy server.
+- `src/app.js`: Express app and middleware
+- `src/server.js`: bootstrap and startup error handling
+- `src/config/*`: env and database config
+- `src/routes/*`: route registration
+- `src/controllers/*`: controller logic
+- `src/models/*`: Mongoose models
+- `src/middlewares/*`: auth and error middleware
+- `src/utils/*`: shared helpers
+- `src/scripts/seedDemoData.js`: demo data seeding
+
+## Tested Integration
+
+This backend was smoke-tested with the frontend for:
+
+- signup and login
+- product list and product detail
+- cart and checkout order creation
+- vendor product create/update/delete
+- admin product approval
+- customer order tracking
+- customer review after completed purchase
+- vendor reply to review

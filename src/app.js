@@ -7,15 +7,29 @@ import apiRouter from "./routes/index.js";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 
 const app = express();
+const LOCAL_DEV_ORIGIN_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/i;
 
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || env.allowedOrigins.length === 0 || env.allowedOrigins.includes(origin)) {
+      const normalizedOrigin = String(origin ?? "").trim();
+      const isKnownOrigin = env.allowedOrigins.includes(normalizedOrigin);
+      const isLocalDevOrigin =
+        env.nodeEnv !== "production" &&
+        LOCAL_DEV_ORIGIN_PATTERN.test(normalizedOrigin);
+
+      if (
+        !origin ||
+        env.allowedOrigins.length === 0 ||
+        isKnownOrigin ||
+        isLocalDevOrigin
+      ) {
         return callback(null, true);
       }
 
-      return callback(new Error("CORS origin is not allowed."));
+      return callback(
+        new Error(`CORS origin is not allowed: ${normalizedOrigin || "unknown"}`),
+      );
     },
   }),
 );

@@ -12,6 +12,21 @@ const shopSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const wishlistItemSchema = new mongoose.Schema(
+  {
+    productId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    addedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false },
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -70,6 +85,10 @@ const userSchema = new mongoose.Schema(
     shop: {
       type: shopSchema,
       default: null,
+    },
+    wishlist: {
+      type: [wishlistItemSchema],
+      default: [],
     },
   },
   {

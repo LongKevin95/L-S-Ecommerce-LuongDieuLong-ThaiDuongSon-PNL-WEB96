@@ -14,6 +14,10 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureValidObjectId } from "../utils/mongoId.js";
 import { attachVendorItemsToOrder } from "../utils/orderMapper.js";
 import {
+  appendStatusHistory,
+  buildCancellationPayload,
+} from "../utils/orderWorkflow.js";
+import {
   parseBooleanInput,
   parseObjectArrayInput,
   parseObjectInput,
@@ -542,6 +546,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const nextStatus = String(req.body?.status ?? "")
     .trim()
     .toLowerCase();
+  const cancellationReason = String(req.body?.reason ?? req.body?.cancellation?.reason ?? "").trim();
 
   if (!VENDOR_ALLOWED_ORDER_STATUSES.includes(nextStatus)) {
     throw new ApiError(400, "Vendor order status is invalid.");
@@ -566,7 +571,17 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You do not have permission to update this order.");
   }
 
+  if (nextStatus === ORDER_STATUS.CANCELLED && !cancellationReason) {
+    throw new ApiError(400, "Cancellation reason is required.");
+  }
+
+  order.statusHistory = appendStatusHistory(order, nextStatus, "vendor");
   order.status = nextStatus;
+
+  if (nextStatus === ORDER_STATUS.CANCELLED) {
+    order.cancellation = buildCancellationPayload(cancellationReason, "vendor");
+  }
+
   await order.save();
 
   res.json(attachVendorItemsToOrder(order, vendorProductIdSet));

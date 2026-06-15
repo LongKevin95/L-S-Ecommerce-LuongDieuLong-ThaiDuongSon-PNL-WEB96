@@ -3,7 +3,11 @@ import mongoose from "mongoose";
 import {
   ORDER_STATUS,
   ORDER_STATUS_VALUES,
+  PAYMENT_PROVIDER_VALUES,
+  PAYMENT_PROVIDERS,
   PAYMENT_METHOD_VALUES,
+  PAYMENT_STATUS,
+  PAYMENT_STATUS_VALUES,
 } from "../constants/orderStatus.js";
 import { applySchemaTransform } from "../utils/schemaTransform.js";
 
@@ -38,6 +42,51 @@ const orderItemSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const orderStatusHistorySchema = new mongoose.Schema(
+  {
+    fromStatus: {
+      type: String,
+      enum: ORDER_STATUS_VALUES,
+      default: null,
+    },
+    toStatus: {
+      type: String,
+      enum: ORDER_STATUS_VALUES,
+      required: true,
+    },
+    by: {
+      type: String,
+      trim: true,
+      default: "system",
+    },
+    at: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false },
+);
+
+const cancellationSchema = new mongoose.Schema(
+  {
+    by: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    reason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    at: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false },
+);
+
 const orderSchema = new mongoose.Schema(
   {
     customerId: {
@@ -55,6 +104,25 @@ const orderSchema = new mongoose.Schema(
       enum: PAYMENT_METHOD_VALUES,
       default: "cod",
     },
+    paymentStatus: {
+      type: String,
+      enum: PAYMENT_STATUS_VALUES,
+      default: PAYMENT_STATUS.PENDING,
+    },
+    paymentProvider: {
+      type: String,
+      enum: PAYMENT_PROVIDER_VALUES,
+      default: PAYMENT_PROVIDERS.COD,
+    },
+    paymentReference: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    paidAt: {
+      type: Date,
+      default: null,
+    },
     shippingAddress: {
       type: shippingAddressSchema,
       required: true,
@@ -67,6 +135,14 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0,
+    },
+    cancellation: {
+      type: cancellationSchema,
+      default: null,
+    },
+    statusHistory: {
+      type: [orderStatusHistorySchema],
+      default: [],
     },
   },
   {

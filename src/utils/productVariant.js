@@ -107,10 +107,15 @@ export async function attachVariantsToProductList(products = []) {
         ? productDocument.toJSON()
         : productDocument;
     const productId = String(productDocument?._id ?? product?.id ?? "").trim();
+    const categoryConfig = buildCategoryConfigPayload(product?.category);
+    const productVariants = (variantsByProductId.get(productId) ?? []).map((variant) =>
+      serializeVariantDocument(variant, categoryConfig),
+    );
 
     return {
       ...product,
-      variants: variantsByProductId.get(productId) ?? [],
+      categoryConfig,
+      variants: productVariants,
     };
   });
 }
@@ -198,15 +203,32 @@ export async function syncProductVariants(
         image,
         optionValues,
         attributes,
-        isDefault: Boolean(variant?.isDefault) || index === 0,
+        isDefault: Boolean(variant?.isDefault),
         sortOrder,
       };
     })
     .filter(Boolean);
 
-  const variantsToInsert =
+  const resolvedNormalizedVariants =
     normalizedVariants.length > 0
-      ? normalizedVariants
+      ? (() => {
+          const preferredDefaultIndex = normalizedVariants.findIndex(
+            (variant) => variant.isDefault,
+          );
+
+          return normalizedVariants.map((variant, index) => ({
+            ...variant,
+            isDefault:
+              preferredDefaultIndex >= 0
+                ? index === preferredDefaultIndex
+                : index === 0,
+          }));
+        })()
+      : [];
+
+  const variantsToInsert =
+    resolvedNormalizedVariants.length > 0
+      ? resolvedNormalizedVariants
       : [
           {
             productId: product._id,

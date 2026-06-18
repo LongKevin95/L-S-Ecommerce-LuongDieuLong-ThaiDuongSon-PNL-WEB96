@@ -27,14 +27,14 @@ export const DEFAULT_CATEGORY_DEFINITIONS = [
   },
   {
     slug: "do-gia-dung",
-    name: "Home",
+    name: "Furniture",
     productAttributeFields: [
       { key: "brand", label: "Brand", inputType: "text" },
-      { key: "material", label: "Material", inputType: "text" },
     ],
     variantOptionFields: [
       { key: "color", label: "Color", inputType: "text" },
-      { key: "size", label: "Size", inputType: "text" },
+      { key: "sizeValues", label: "Size values", inputType: "text" },
+      { key: "material", label: "Material", inputType: "text" },
     ],
     variantAttributeFields: [],
   },

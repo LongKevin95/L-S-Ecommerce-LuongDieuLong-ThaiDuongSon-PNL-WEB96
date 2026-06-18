@@ -3,6 +3,10 @@ import mongoose from "mongoose";
 import {
   ORDER_STATUS,
   ORDER_STATUS_VALUES,
+  PAYMENT_PROVIDERS,
+  PAYMENT_PROVIDER_VALUES,
+  PAYMENT_STATUS,
+  PAYMENT_STATUS_VALUES,
   PAYMENT_METHOD_VALUES,
 } from "../constants/orderStatus.js";
 import { applySchemaTransform } from "../utils/schemaTransform.js";
@@ -38,6 +42,22 @@ const orderItemSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const paymentMetaSchema = new mongoose.Schema(
+  {
+    sepayOrderId: { type: String, trim: true, default: "" },
+    sepayTransactionId: { type: String, trim: true, default: "" },
+    providerTransactionId: { type: String, trim: true, default: "" },
+    providerStatus: { type: String, trim: true, default: "" },
+    gateway: { type: String, trim: true, default: "" },
+    referenceCode: { type: String, trim: true, default: "" },
+    paymentChannel: { type: String, trim: true, default: "" },
+    cardBrand: { type: String, trim: true, default: "" },
+    cardNumberMasked: { type: String, trim: true, default: "" },
+    lastWebhookAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
 const orderSchema = new mongoose.Schema(
   {
     customerId: {
@@ -55,6 +75,38 @@ const orderSchema = new mongoose.Schema(
       enum: PAYMENT_METHOD_VALUES,
       default: "cod",
     },
+    paymentProvider: {
+      type: String,
+      enum: PAYMENT_PROVIDER_VALUES,
+      default: PAYMENT_PROVIDERS.MANUAL,
+    },
+    paymentStatus: {
+      type: String,
+      enum: PAYMENT_STATUS_VALUES,
+      default: PAYMENT_STATUS.UNPAID,
+    },
+    paymentCode: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    paymentInvoiceNumber: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    paymentExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    paidAt: {
+      type: Date,
+      default: null,
+    },
+    paymentMeta: {
+      type: paymentMetaSchema,
+      default: () => ({}),
+    },
     shippingAddress: {
       type: shippingAddressSchema,
       required: true,
@@ -71,6 +123,22 @@ const orderSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+  },
+);
+
+orderSchema.index(
+  { paymentInvoiceNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { paymentInvoiceNumber: { $type: "string", $ne: "" } },
+  },
+);
+
+orderSchema.index(
+  { paymentCode: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { paymentCode: { $type: "string", $ne: "" } },
   },
 );
 

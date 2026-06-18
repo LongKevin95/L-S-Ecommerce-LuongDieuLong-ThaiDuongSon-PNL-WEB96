@@ -8,10 +8,27 @@ import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 
 const app = express();
 
+function normalizeOrigin(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\/+$/, "");
+}
+
+function isLocalDevelopmentOrigin(origin) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+}
+
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || env.allowedOrigins.length === 0 || env.allowedOrigins.includes(origin)) {
+      const normalizedOrigin = normalizeOrigin(origin);
+
+      if (
+        !normalizedOrigin ||
+        env.allowedOrigins.length === 0 ||
+        env.allowedOrigins.includes(normalizedOrigin) ||
+        (env.nodeEnv !== "production" && isLocalDevelopmentOrigin(normalizedOrigin))
+      ) {
         return callback(null, true);
       }
 

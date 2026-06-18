@@ -1,13 +1,35 @@
+import mongoose from "mongoose";
+
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Variant from "../models/Variant.js";
 import {
   ORDER_STATUS,
+  PAYMENT_METHODS,
   PAYMENT_METHOD_VALUES,
+  PAYMENT_PROVIDERS,
+  PAYMENT_STATUS,
 } from "../constants/orderStatus.js";
 import { PRODUCT_STATUS } from "../constants/productStatus.js";
+import { buildSePayPaymentState } from "../services/sepay.service.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+
+function normalizePaymentMethod(paymentMethod) {
+  const nextPaymentMethod = String(paymentMethod ?? PAYMENT_METHODS.COD)
+    .trim()
+    .toLowerCase();
+
+  if (nextPaymentMethod === "cash") {
+    return PAYMENT_METHODS.COD;
+  }
+
+  if (nextPaymentMethod === PAYMENT_METHODS.CARD) {
+    return PAYMENT_METHODS.SEPAY;
+  }
+
+  return nextPaymentMethod;
+}
 
 function normalizeShippingAddress(shippingAddress = {}) {
   return {
@@ -96,16 +118,32 @@ function buildRequestedStockQuantityMap(items = []) {
 }
 
 function buildOrderPayload({
+  orderId,
   customerId,
   paymentMethod,
   shippingAddress,
   items,
   total,
+  paymentState = {},
 }) {
   return {
+    _id: orderId,
     customerId,
     status: ORDER_STATUS.PENDING,
     paymentMethod,
+    paymentProvider:
+      paymentState.paymentProvider ??
+      (paymentMethod === PAYMENT_METHODS.SEPAY
+        ? PAYMENT_PROVIDERS.SEPAY
+        : PAYMENT_PROVIDERS.MANUAL),
+    paymentStatus:
+      paymentState.paymentStatus ??
+      (paymentMethod === PAYMENT_METHODS.SEPAY
+        ? PAYMENT_STATUS.PENDING
+        : PAYMENT_STATUS.UNPAID),
+    paymentCode: paymentState.paymentCode ?? "",
+    paymentInvoiceNumber: paymentState.paymentInvoiceNumber ?? "",
+    paymentExpiresAt: paymentState.paymentExpiresAt ?? null,
     shippingAddress,
     items,
     total,
@@ -299,6 +337,7 @@ async function restoreStocks(
 }
 
 async function createOrderWithFallback(payload) {
+  const orderId = payload.orderId ?? new mongoose.Types.ObjectId();
   const productIds = [...buildRequestedQuantityMap(payload.items).keys()];
   const products = await Product.find({ _id: { $in: productIds } });
   const variants = await Variant.find({ productId: { $in: productIds } });
@@ -324,6 +363,7 @@ async function createOrderWithFallback(payload) {
     const order = await Order.create(
       buildOrderPayload({
         ...payload,
+        orderId,
         items,
         total,
       }),
@@ -343,11 +383,10 @@ async function createOrderWithFallback(payload) {
 
 export const createOrder = asyncHandler(async (req, res) => {
   const customerId = String(req.body?.customerId ?? req.user?.id ?? "").trim();
-  const paymentMethod = String(req.body?.paymentMethod ?? "cod")
-    .trim()
-    .toLowerCase();
+  const paymentMethod = normalizePaymentMethod(req.body?.paymentMethod);
   const shippingAddress = normalizeShippingAddress(req.body?.shippingAddress);
   const items = normalizeItems(req.body?.items);
+  const orderId = new mongoose.Types.ObjectId();
 
   if (!customerId || customerId !== String(req.user.id)) {
     throw new ApiError(
@@ -375,6 +414,7 @@ export const createOrder = asyncHandler(async (req, res) => {
   }
 
   const payload = {
+    orderId,
     customerId,
     paymentMethod,
     shippingAddress,
@@ -402,12 +442,19 @@ export const createOrder = asyncHandler(async (req, res) => {
       await Promise.all(products.map((product) => product.save({ session })));
       await Promise.all(variants.map((variant) => variant.save({ session })));
 
+      const paymentState =
+        paymentMethod === PAYMENT_METHODS.SEPAY
+          ? buildSePayPaymentState(orderId)
+          : {};
+
       const createdOrders = await Order.create(
         [
           buildOrderPayload({
             ...payload,
+            orderId,
             items: normalizedItems,
             total,
+            paymentState,
           }),
         ],
         { session },
@@ -417,7 +464,14 @@ export const createOrder = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     if (isTransactionUnsupportedError(error)) {
-      order = await createOrderWithFallback(payload);
+      const fallbackPaymentState =
+        paymentMethod === PAYMENT_METHODS.SEPAY
+          ? buildSePayPaymentState(orderId)
+          : {};
+      order = await createOrderWithFallback({
+        ...payload,
+        paymentState: fallbackPaymentState,
+      });
     } else {
       throw error;
     }

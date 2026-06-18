@@ -6,7 +6,10 @@ import {
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureValidObjectId } from "../utils/mongoId.js";
-import { buildProductDetailResponse } from "../utils/productVariant.js";
+import {
+  attachVariantsToProductList,
+  buildProductDetailResponse,
+} from "../utils/productVariant.js";
 
 export const listProducts = asyncHandler(async (req, res) => {
   const category = String(req.query?.category ?? "")
@@ -48,7 +51,7 @@ export const listProducts = asyncHandler(async (req, res) => {
   }
 
   const products = await Product.find(filters).sort({ createdAt: -1 });
-  res.json(products);
+  res.json(await attachVariantsToProductList(products));
 });
 
 export const getProductById = asyncHandler(async (req, res) => {

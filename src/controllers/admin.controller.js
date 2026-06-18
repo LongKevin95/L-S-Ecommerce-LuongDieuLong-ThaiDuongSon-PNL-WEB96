@@ -8,6 +8,7 @@ import {
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureValidObjectId } from "../utils/mongoId.js";
+import { attachVariantsToProductList } from "../utils/productVariant.js";
 
 const ADMIN_ALLOWED_PRODUCT_STATUSES = [
   PRODUCT_STATUS.ACTIVE,
@@ -45,7 +46,7 @@ export const listProducts = asyncHandler(async (req, res) => {
   }
 
   const products = await Product.find(filters).sort({ createdAt: -1 });
-  res.json(products);
+  res.json(await attachVariantsToProductList(products));
 });
 
 export const updateProductStatus = asyncHandler(async (req, res) => {

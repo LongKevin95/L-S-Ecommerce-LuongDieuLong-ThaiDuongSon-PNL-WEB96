@@ -19,6 +19,20 @@ function normalizeTransactionAmount(payload) {
   );
 }
 
+function maskSecret(value) {
+  const normalizedValue = String(value ?? "").trim();
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  if (normalizedValue.length <= 8) {
+    return "*".repeat(normalizedValue.length);
+  }
+
+  return `${normalizedValue.slice(0, 4)}***${normalizedValue.slice(-4)}`;
+}
+
 function isSuccessfulSePayNotification(payload) {
   const notificationType = String(payload?.notification_type ?? "")
     .trim()
@@ -151,6 +165,14 @@ export const handleSePayIpn = asyncHandler(async (req, res) => {
   const expectedSecret = getSePayIpnSecret();
 
   if (!providedSecret || providedSecret !== expectedSecret) {
+    console.warn("[sepay-ipn] Secret validation failed.", {
+      hasProvidedSecret: Boolean(providedSecret),
+      providedSecretPreview: maskSecret(providedSecret),
+      expectedSecretPreview: maskSecret(expectedSecret),
+      headerKeys: Object.keys(req.headers ?? {}).sort(),
+      contentType: String(req.headers["content-type"] ?? "").trim(),
+      userAgent: String(req.headers["user-agent"] ?? "").trim(),
+    });
     throw new ApiError(401, "SePay IPN secret is invalid.");
   }
 
@@ -166,6 +188,17 @@ export const handleSePayIpn = asyncHandler(async (req, res) => {
   )
     .trim()
     .toUpperCase();
+
+  console.info("[sepay-ipn] Notification accepted.", {
+    paymentInvoiceNumber,
+    providerTransactionId,
+    providerOrderId,
+    notificationType: String(payload?.notification_type ?? "").trim(),
+    orderStatus: String(payload?.order?.order_status ?? "").trim(),
+    transactionStatus: String(payload?.transaction?.transaction_status ?? "").trim(),
+    amount,
+    currency,
+  });
 
   let order = null;
 
@@ -206,6 +239,11 @@ export const handleSePayIpn = asyncHandler(async (req, res) => {
   }
 
   if (!order) {
+    console.warn("[sepay-ipn] Order not found for invoice number.", {
+      paymentInvoiceNumber,
+      providerTransactionId,
+      providerOrderId,
+    });
     res.status(200).json({ success: true });
     return;
   }
@@ -244,6 +282,13 @@ export const handleSePayIpn = asyncHandler(async (req, res) => {
   };
 
   await order.save();
+
+  console.info("[sepay-ipn] Order payment state updated.", {
+    orderId: order.id,
+    paymentInvoiceNumber: order.paymentInvoiceNumber,
+    paymentStatus: order.paymentStatus,
+    paidAt: order.paidAt,
+  });
 
   res.status(200).json({ success: true });
 });

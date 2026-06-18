@@ -8,34 +8,16 @@ import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 
 const app = express();
 
-function normalizeOrigin(value) {
-  return String(value ?? "")
-    .trim()
-    .replace(/\/+$/, "");
-}
+const corsOptions = {
+  origin(_origin, callback) {
+    return callback(null, true);
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Secret-Key"],
+};
 
-function isLocalDevelopmentOrigin(origin) {
-  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
-}
-
-app.use(
-  cors({
-    origin(origin, callback) {
-      const normalizedOrigin = normalizeOrigin(origin);
-
-      if (
-        !normalizedOrigin ||
-        env.allowedOrigins.length === 0 ||
-        env.allowedOrigins.includes(normalizedOrigin) ||
-        (env.nodeEnv !== "production" && isLocalDevelopmentOrigin(normalizedOrigin))
-      ) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("CORS origin is not allowed."));
-    },
-  }),
-);
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"));

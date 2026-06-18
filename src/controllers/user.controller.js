@@ -1,10 +1,10 @@
 import User from "../models/User.js";
-import { USER_ROLE_VALUES } from "../constants/roles.js";
+import { USER_ROLES, USER_ROLE_VALUES } from "../constants/roles.js";
 import { USER_STATUS_VALUES } from "../constants/userStatus.js";
 import { destroyCloudinaryAsset, uploadImageFile } from "../utils/media.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { sanitizeUser } from "../utils/auth.js";
+import { sanitizeUser, signAccessToken } from "../utils/auth.js";
 import { ensureValidObjectId } from "../utils/mongoId.js";
 import { parseBooleanInput } from "../utils/request.js";
 
@@ -111,6 +111,31 @@ export const listUsers = asyncHandler(async (req, res) => {
   const users = await User.find(filters).sort({ createdAt: -1 });
 
   res.json(users.map((user) => sanitizeUser(user)));
+});
+
+export const updateMyRole = asyncHandler(async (req, res) => {
+  const user = req.user;
+  const nextRole = String(req.body?.role ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (nextRole !== USER_ROLES.VENDOR) {
+    throw new ApiError(400, "Only vendor role onboarding is supported.");
+  }
+
+  const currentRoles = Array.isArray(user.roles) ? user.roles : [];
+
+  if (!currentRoles.includes(USER_ROLES.VENDOR)) {
+    user.roles = Array.from(new Set([...currentRoles, USER_ROLES.VENDOR]));
+    await user.save();
+  }
+
+  const sanitizedUser = sanitizeUser(user);
+
+  res.json({
+    accessToken: signAccessToken(sanitizedUser),
+    user: sanitizedUser,
+  });
 });
 
 export const getUserById = asyncHandler(async (req, res) => {

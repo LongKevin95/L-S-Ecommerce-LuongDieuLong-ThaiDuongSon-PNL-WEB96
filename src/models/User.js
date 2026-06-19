@@ -71,6 +71,10 @@ const userSchema = new mongoose.Schema(
       type: shopSchema,
       default: null,
     },
+    wishlist: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true,

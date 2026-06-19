@@ -6,6 +6,62 @@ import {
 } from "../constants/productStatus.js";
 import { applySchemaTransform } from "../utils/schemaTransform.js";
 
+const vendorReplySchema = new mongoose.Schema(
+  {
+    text: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    at: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false },
+);
+
+const reviewSchema = new mongoose.Schema(
+  {
+    customerId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    customerEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: "",
+    },
+    customerName: {
+      type: String,
+      trim: true,
+      default: "Customer",
+    },
+    comment: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    stars: {
+      type: Number,
+      min: 1,
+      max: 5,
+      default: 5,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    vendorReply: {
+      type: vendorReplySchema,
+      default: null,
+    },
+  },
+  { _id: false },
+);
+
 const productSchema = new mongoose.Schema(
   {
     title: {
@@ -119,6 +175,10 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0,
+    },
+    reviewsData: {
+      type: [reviewSchema],
+      default: [],
     },
   },
   {

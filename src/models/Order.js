@@ -58,6 +58,15 @@ const paymentMetaSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const cancellationSchema = new mongoose.Schema(
+  {
+    by: { type: String, trim: true, default: "" },
+    reason: { type: String, trim: true, default: "" },
+    at: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
 const orderSchema = new mongoose.Schema(
   {
     customerId: {
@@ -119,6 +128,10 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0,
+    },
+    cancellation: {
+      type: cancellationSchema,
+      default: null,
     },
   },
   {

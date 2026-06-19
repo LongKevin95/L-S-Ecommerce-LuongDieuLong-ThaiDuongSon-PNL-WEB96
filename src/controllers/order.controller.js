@@ -14,6 +14,7 @@ import { PRODUCT_STATUS } from "../constants/productStatus.js";
 import { buildSePayPaymentState } from "../services/sepay.service.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { ensureValidObjectId } from "../utils/mongoId.js";
 
 function normalizePaymentMethod(paymentMethod) {
   const nextPaymentMethod = String(paymentMethod ?? PAYMENT_METHODS.COD)
@@ -487,4 +488,38 @@ export const getMyOrders = asyncHandler(async (req, res) => {
     createdAt: -1,
   });
   res.json(orders);
+});
+
+export const cancelMyOrder = asyncHandler(async (req, res) => {
+  const orderId = new mongoose.Types.ObjectId(
+    ensureValidObjectId(req.params?.id, "Order id"),
+  );
+  const reason = String(req.body?.reason ?? "").trim();
+  const order = await Order.findById(orderId);
+
+  if (!order) {
+    throw new ApiError(404, "Order was not found.");
+  }
+
+  if (String(order.customerId) !== String(req.user.id)) {
+    throw new ApiError(403, "You do not have access to this order.");
+  }
+
+  if (String(order.status ?? "").trim().toLowerCase() !== ORDER_STATUS.PENDING) {
+    throw new ApiError(400, "Only pending orders can be cancelled.");
+  }
+
+  if (!reason) {
+    throw new ApiError(400, "Cancellation reason is required.");
+  }
+
+  order.status = ORDER_STATUS.CANCELLED;
+  order.cancellation = {
+    by: "customer",
+    reason,
+    at: new Date(),
+  };
+  await order.save();
+
+  res.json(order);
 });

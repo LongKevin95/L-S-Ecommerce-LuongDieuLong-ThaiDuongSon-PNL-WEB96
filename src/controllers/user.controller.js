@@ -285,3 +285,40 @@ export const getUserById = asyncHandler(async (req, res) => {
 
   res.json(sanitizeUser(user));
 });
+
+export const updateUserStatus = asyncHandler(async (req, res) => {
+  const userId = ensureValidObjectId(req.params?.id, "User id");
+  const nextStatus = String(req.body?.status ?? "")
+    .trim()
+    .toLowerCase();
+  const user = await User.findById(userId);
+
+  if (!USER_STATUS_VALUES.includes(nextStatus)) {
+    throw new ApiError(400, "User status is invalid.");
+  }
+
+  if (!user) {
+    throw new ApiError(404, "User was not found.");
+  }
+
+  user.status = nextStatus;
+  await user.save();
+
+  res.json(sanitizeUser(user));
+});
+
+export const deleteUserAccount = asyncHandler(async (req, res) => {
+  const userId = ensureValidObjectId(req.params?.id, "User id");
+  const user = await User.findById(userId);
+
+  if (!user) {
+    throw new ApiError(404, "User was not found.");
+  }
+
+  await user.deleteOne();
+
+  res.json({
+    message: "User deleted successfully.",
+    id: String(user.id),
+  });
+});

@@ -13,6 +13,11 @@ import {
 import { PRODUCT_STATUS } from "../constants/productStatus.js";
 import { buildSePayPaymentState } from "../services/sepay.service.js";
 import { ApiError } from "../utils/ApiError.js";
+import {
+  buildPriceSnapshot,
+  getFlashSaleState,
+  isProductFlashSaleActive,
+} from "../utils/flashSale.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureValidObjectId } from "../utils/mongoId.js";
 
@@ -151,7 +156,20 @@ function buildOrderPayload({
   };
 }
 
-function validateAndApplyStockChanges(products, variants, items) {
+function resolveCheckoutUnitPrice(product, variant, flashSaleState) {
+  const flashSaleActive = isProductFlashSaleActive(product, flashSaleState);
+  const flashDiscountPercent = Number(product?.flashSale?.discountPercent ?? 0);
+  const priceSnapshot = buildPriceSnapshot(
+    variant?.price ?? product?.price,
+    variant?.oldPrice ?? product?.oldPrice,
+    flashDiscountPercent,
+    flashSaleActive,
+  );
+
+  return Number(priceSnapshot.displayPrice ?? 0);
+}
+
+function validateAndApplyStockChanges(products, variants, items, flashSaleState) {
   const requestedQuantityMap = buildRequestedStockQuantityMap(items);
   const productMap = new Map(
     products.map((product) => [String(product.id), product]),
@@ -247,7 +265,7 @@ function validateAndApplyStockChanges(products, variants, items) {
           product.gallery?.[0] ??
           "/favicon.svg",
       ).trim();
-    item.price = Number(variant?.price ?? product.price ?? 0);
+    item.price = resolveCheckoutUnitPrice(product, variant, flashSaleState);
     item.shopName =
       String(item.shopName ?? "").trim() ||
       String(product.shopName ?? "Shop").trim();
@@ -352,6 +370,7 @@ async function createOrderWithFallback(payload) {
     products,
     variants,
     payload.items,
+    payload.flashSaleState,
   );
 
   try {
@@ -424,6 +443,7 @@ export const createOrder = asyncHandler(async (req, res) => {
 
   let order;
   const session = await Order.startSession();
+  const flashSaleState = await getFlashSaleState();
 
   try {
     await session.withTransaction(async () => {
@@ -438,6 +458,7 @@ export const createOrder = asyncHandler(async (req, res) => {
         products,
         variants,
         items,
+        flashSaleState,
       );
 
       await Promise.all(products.map((product) => product.save({ session })));
@@ -472,6 +493,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       order = await createOrderWithFallback({
         ...payload,
         paymentState: fallbackPaymentState,
+        flashSaleState,
       });
     } else {
       throw error;

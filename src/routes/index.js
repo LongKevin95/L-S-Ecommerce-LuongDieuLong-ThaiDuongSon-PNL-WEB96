@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import adminRoutes from "./admin.routes.js";
 import authRoutes from "./auth.routes.js";
+import flashSaleRoutes from "./flashSale.routes.js";
 import healthRoutes from "./health.routes.js";
 import orderRoutes from "./order.routes.js";
 import paymentRoutes from "./payment.routes.js";
@@ -17,6 +18,7 @@ router.use("/health", healthRoutes);
 router.use("/auth", authRoutes);
 router.use("/users", userRoutes);
 router.use("/products", productRoutes);
+router.use("/flash-sale", flashSaleRoutes);
 router.use("/wishlist", wishlistRoutes);
 router.use("/shops", shopRoutes);
 router.use("/orders", orderRoutes);

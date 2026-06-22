@@ -62,6 +62,27 @@ const reviewSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const productFlashSaleSchema = new mongoose.Schema(
+  {
+    campaignId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    discountPercent: {
+      type: Number,
+      min: 0,
+      max: 95,
+      default: 0,
+    },
+    requestedAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false },
+);
+
 const productSchema = new mongoose.Schema(
   {
     title: {
@@ -179,6 +200,10 @@ const productSchema = new mongoose.Schema(
     reviewsData: {
       type: [reviewSchema],
       default: [],
+    },
+    flashSale: {
+      type: productFlashSaleSchema,
+      default: () => ({}),
     },
   },
   {

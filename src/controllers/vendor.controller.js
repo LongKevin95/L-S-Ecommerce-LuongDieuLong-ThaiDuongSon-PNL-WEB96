@@ -26,6 +26,10 @@ import {
   syncProductVariants,
 } from "../utils/productVariant.js";
 import {
+  buildPriceSnapshot,
+  getFlashSaleState,
+} from "../utils/flashSale.js";
+import {
   buildShopSlug,
   buildUserShopSnapshot,
   resolvePreferredShopObjectId,
@@ -75,6 +79,93 @@ function resolvePayloadValue(payload, key, currentValue = "") {
   }
 
   return currentValue;
+}
+
+function normalizeFlashSaleDiscountPercent(value) {
+  const nextValue = Number(value ?? 0);
+
+  if (!Number.isFinite(nextValue)) {
+    return null;
+  }
+
+  return Math.round(nextValue);
+}
+
+function buildFlashSaleValidationTargets(product, variants = []) {
+  const variantList = Array.isArray(variants) ? variants : [];
+
+  if (variantList.length > 0) {
+    return variantList;
+  }
+
+  return [product];
+}
+
+async function syncVendorFlashSale(product, body, variants = []) {
+  const hasFlashSaleToggle = hasOwnField(body, "flashSaleEnabled");
+  const hasFlashSaleDiscount = hasOwnField(body, "flashSaleDiscountPercent");
+
+  if (!hasFlashSaleToggle && !hasFlashSaleDiscount) {
+    return;
+  }
+
+  const wantsFlashSale = parseBooleanInput(body?.flashSaleEnabled);
+
+  if (!wantsFlashSale) {
+    product.flashSale = {
+      campaignId: "",
+      discountPercent: 0,
+      requestedAt: null,
+    };
+    return;
+  }
+
+  const flashSaleState = await getFlashSaleState();
+
+  if (
+    !Boolean(flashSaleState?.isEnabled) ||
+    !String(flashSaleState?.currentCampaignId ?? "").trim()
+  ) {
+    throw new ApiError(400, "Flash sale campaign is not open.");
+  }
+
+  const discountPercent = normalizeFlashSaleDiscountPercent(
+    body?.flashSaleDiscountPercent,
+  );
+
+  if (!Number.isFinite(discountPercent) || discountPercent < 1 || discountPercent > 95) {
+    throw new ApiError(
+      400,
+      "Flash sale discount percent must be between 1 and 95.",
+    );
+  }
+
+  const hasInvalidFlashSalePrice = buildFlashSaleValidationTargets(
+    product,
+    variants,
+  ).some((item) => {
+    const priceSnapshot = buildPriceSnapshot(
+      item?.price,
+      item?.oldPrice,
+      discountPercent,
+      true,
+    );
+
+    return priceSnapshot.displayPrice >= priceSnapshot.regularPrice;
+  });
+
+  if (hasInvalidFlashSalePrice) {
+    throw new ApiError(
+      400,
+      "Flash sale price must be lower than the regular sale price.",
+    );
+  }
+
+  product.flashSale = {
+    campaignId: String(flashSaleState.currentCampaignId ?? "").trim(),
+    discountPercent,
+    requestedAt: new Date(),
+  };
 }
 
 function validatePendingProductPayload(payload = {}, currentProduct = null) {
@@ -403,7 +494,7 @@ export const createProduct = asyncHandler(async (req, res) => {
     shopName: shop.name,
   });
 
-  await syncProductVariants(product, variantsInput, {
+  const syncedVariants = await syncProductVariants(product, variantsInput, {
     category,
     fallbackPrice: payload.price,
     fallbackOldPrice: payload.oldPrice ?? 0,
@@ -413,6 +504,7 @@ export const createProduct = asyncHandler(async (req, res) => {
     fallbackSizes: payload.sizes ?? [],
   });
 
+  await syncVendorFlashSale(product, req.body, syncedVariants);
   await product.save();
 
   res.status(201).json(await buildProductDetailResponse(product));
@@ -469,7 +561,7 @@ export const updateProduct = asyncHandler(async (req, res) => {
     !product.defaultVariantId ||
     product.variantCount === 0
   ) {
-    await syncProductVariants(product, variantsInput, {
+    const syncedVariants = await syncProductVariants(product, variantsInput, {
       category,
       fallbackPrice: payload.price ?? product.price,
       fallbackOldPrice: payload.oldPrice ?? product.oldPrice,
@@ -478,6 +570,10 @@ export const updateProduct = asyncHandler(async (req, res) => {
       fallbackColors: payload.colors ?? product.colors ?? [],
       fallbackSizes: payload.sizes ?? product.sizes ?? [],
     });
+
+    await syncVendorFlashSale(product, req.body, syncedVariants);
+  } else {
+    await syncVendorFlashSale(product, req.body);
   }
 
   await product.save();

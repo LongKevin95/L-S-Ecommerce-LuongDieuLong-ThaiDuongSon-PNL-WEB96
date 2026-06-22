@@ -3,6 +3,11 @@ import {
   buildCategoryConfigPayload,
   ensureCategoryBySlug,
 } from "./category.js";
+import {
+  decorateProductForCommerce,
+  getFlashSaleState,
+  loadSoldCountsByProductIds,
+} from "./flashSale.js";
 
 function normalizeText(value) {
   return String(value ?? "").trim();
@@ -76,10 +81,20 @@ export async function attachVariantsToProductList(products = []) {
   }
 
   const productIds = productList.map((product) => product?._id).filter(Boolean);
+  const normalizedProductIds = productList
+    .map((product) =>
+      String(product?._id ?? product?.id ?? "").trim(),
+    )
+    .filter(Boolean);
 
-  const variantDocuments = await Variant.find({
-    productId: { $in: productIds },
-  }).sort({ isDefault: -1, sortOrder: 1, createdAt: 1 });
+  const [variantDocuments, flashSaleState, soldCountsByProductId] =
+    await Promise.all([
+      Variant.find({
+        productId: { $in: productIds },
+      }).sort({ isDefault: -1, sortOrder: 1, createdAt: 1 }),
+      getFlashSaleState(),
+      loadSoldCountsByProductIds(normalizedProductIds),
+    ]);
 
   const variantsByProductId = variantDocuments.reduce(
     (result, variantDocument) => {
@@ -112,11 +127,15 @@ export async function attachVariantsToProductList(products = []) {
       serializeVariantDocument(variant, categoryConfig),
     );
 
-    return {
+    return decorateProductForCommerce(
+      {
       ...product,
       categoryConfig,
       variants: productVariants,
-    };
+      },
+      flashSaleState,
+      soldCountsByProductId.get(productId) ?? 0,
+    );
   });
 }
 
@@ -125,19 +144,33 @@ export async function buildProductDetailResponse(productDocument) {
     typeof productDocument?.toJSON === "function"
       ? productDocument.toJSON()
       : productDocument;
-  const category = await ensureCategoryBySlug(product?.category);
+  const [category, flashSaleState, soldCountsByProductId, variantDocuments] =
+    await Promise.all([
+      ensureCategoryBySlug(product?.category),
+      getFlashSaleState(),
+      loadSoldCountsByProductIds([
+        String(productDocument?._id ?? product?._id ?? product?.id ?? "").trim(),
+      ]),
+      Variant.find({
+        productId: productDocument?._id ?? product?._id ?? product?.id,
+      }).sort({ isDefault: -1, sortOrder: 1, createdAt: 1 }),
+    ]);
   const categoryConfig = buildCategoryConfigPayload(category);
-  const variantDocuments = await Variant.find({
-    productId: productDocument?._id ?? product?._id ?? product?.id,
-  }).sort({ isDefault: -1, sortOrder: 1, createdAt: 1 });
+  const normalizedProductId = String(
+    productDocument?._id ?? product?._id ?? product?.id ?? "",
+  ).trim();
 
-  return {
-    ...product,
-    categoryConfig,
-    variants: variantDocuments.map((variantDocument) =>
-      serializeVariantDocument(variantDocument, categoryConfig),
-    ),
-  };
+  return decorateProductForCommerce(
+    {
+      ...product,
+      categoryConfig,
+      variants: variantDocuments.map((variantDocument) =>
+        serializeVariantDocument(variantDocument, categoryConfig),
+      ),
+    },
+    flashSaleState,
+    soldCountsByProductId.get(normalizedProductId) ?? 0,
+  );
 }
 
 export async function syncProductVariants(

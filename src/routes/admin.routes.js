@@ -7,6 +7,10 @@ import {
   updateProductStatus,
 } from "../controllers/admin.controller.js";
 import {
+  getPublicFlashSale,
+  updateFlashSaleConfig,
+} from "../controllers/flashSale.controller.js";
+import {
   deleteUserAccount,
   updateUserStatus,
 } from "../controllers/user.controller.js";
@@ -21,6 +25,8 @@ router.get("/products", listProducts);
 router.patch("/products/:id/status", updateProductStatus);
 router.get("/orders", listOrders);
 router.patch("/orders/:id/status", updateOrderStatus);
+router.get("/flash-sale", getPublicFlashSale);
+router.patch("/flash-sale", updateFlashSaleConfig);
 router.patch("/users/:id/status", updateUserStatus);
 router.delete("/users/:id", deleteUserAccount);
 

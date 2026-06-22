@@ -109,7 +109,9 @@ async function syncVendorFlashSale(product, body, variants = []) {
     return;
   }
 
-  const wantsFlashSale = parseBooleanInput(body?.flashSaleEnabled);
+  const wantsFlashSale = hasFlashSaleToggle
+    ? parseBooleanInput(body?.flashSaleEnabled)
+    : hasFlashSaleDiscount;
 
   if (!wantsFlashSale) {
     product.flashSale = {

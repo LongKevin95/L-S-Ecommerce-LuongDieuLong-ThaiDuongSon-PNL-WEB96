@@ -21,6 +21,10 @@ export const updateFlashSaleConfig = asyncHandler(async (req, res) => {
 
   if (!nextEnabled) {
     config.isEnabled = false;
+    config.currentCampaignId = "";
+    config.startsAt = null;
+    config.endsAt = null;
+    config.updatedBy = String(req.user?.email ?? req.user?.id ?? "").trim();
     await config.save();
     res.json(await getFlashSaleState());
     return;
